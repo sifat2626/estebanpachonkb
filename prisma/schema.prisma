@@ -1,0 +1,388 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String       @unique
+  password  String
+  phone     String
+  role      UserRoleEnum @default(USER)
+  status    UserStatus   @default(ACTIVATE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  profile   Profile?
+  image     String?
+  locker    Locker?
+  packages  Package[]
+  payments  Payment[]
+
+  // referral fields
+  referralBalance Float   @default(0)
+  referralCode    String? @unique
+  referredBy      String? @db.ObjectId
+
+  orderCount    Int           @default(0)
+  // OTP fields
+  otp           String? // Stores the OTP for verification (e.g., for password reset)
+  otpExpiresAt  DateTime? // Stores the expiration date and time for the OTP
+  Agent         Agent?
+  pricingPlan   PricingPlan?  @relation(fields: [pricingPlanId], references: [id])
+  pricingPlanId String?       @db.ObjectId
+  Consolidate   Consolidate[]
+  packageCount  Int           @default(0)
+  orders        Order[]
+
+  @@map("users")
+}
+
+enum Level {
+  BEGINNER
+  INTERMEDIATE
+  EXPERT
+}
+
+model Agent {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String    @unique @db.ObjectId
+  User        User      @relation(fields: [userId], references: [id])
+  warehouseId String    @db.ObjectId
+  Warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+}
+
+model Warehouse {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  country   String
+  city      String
+  address   String
+  createdAt DateTime @default(now())
+  Agent     Agent[]
+  Order     Order[]
+
+  @@map("warehouses")
+}
+
+model Locker {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  code      String   @unique
+  userId    String   @unique @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  Profile   Profile?
+
+  @@map("lockers")
+}
+
+model Profile {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @unique @db.ObjectId
+  country   Country  @default(COLOMBIA)
+  province  String
+  district  String
+  idNumber  String
+  address   String
+  lockerId  String   @unique @db.ObjectId
+  locker    Locker   @relation(fields: [lockerId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Package {
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  packageDetails String?
+  price          Float?
+  weight         Float?
+  dimensions     String?
+  status         PackageStatus @default(ALERTED)
+  orderType      OrderType     @default(SINGLE)
+  trackingNumber String        @unique
+  vendorName     String
+  note           String?
+  orderId        String?       @db.ObjectId
+  Order          Order?        @relation(fields: [orderId], references: [id])
+  userId         String        @db.ObjectId
+  user           User          @relation(fields: [userId], references: [id])
+  image          String?
+  invoice        String
+
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  ServicePackage ServicePackage[]
+  consolidateId  String?          @db.ObjectId
+  consolidate    Consolidate?     @relation(fields: [consolidateId], references: [id])
+  expiryDate     DateTime?
+
+  @@map("packages")
+}
+
+model ServicePackage {
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  packageId String  @db.ObjectId
+  serviceId String  @db.ObjectId
+  package   Package @relation(fields: [packageId], references: [id])
+  service   Service @relation(fields: [serviceId], references: [id])
+
+  @@unique([packageId, serviceId])
+}
+
+model Consolidate {
+  id        String            @id @default(auto()) @map("_id") @db.ObjectId
+  packages  Package[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  // paymentId String    @unique @db.ObjectId()
+  // payment   Payment   @relation(fields: [paymentId], references: [id])
+  userId    String            @db.ObjectId()
+  user      User              @relation(fields: [userId], references: [id])
+  startDate DateTime
+  endDate   DateTime
+  status    ConsolidateStatus @default(ACCEPTED)
+}
+
+enum ConsolidateStatus {
+  ACCEPTED
+  ORDERED
+}
+
+enum OrderType {
+  SINGLE
+  CONSOLIDATE
+}
+
+model PricingPlan {
+  id                    String   @id @default(auto()) @map("_id") @db.ObjectId
+  name                  Level
+  name_es               String
+  baseRate              Float
+  baseRate_es           String
+  country               Country  @default(COLOMBIA)
+  country_es            String
+  description           String
+  description_es        String
+  storageDays           Int
+  storageDays_es        String
+  consolidationFee      Float
+  consolidationFee_es   String
+  additionalFeatures    String[]
+  additionalFeatures_es String[]
+  insurancePlan         String   @default("Up to 200$ insurance")
+  insurancePlan_es      String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  User User[]
+
+  @@map("pricing_plans")
+}
+
+enum Country {
+  COLOMBIA
+  HONDURAS
+}
+
+model Order {
+  id                     String      @id @default(auto()) @map("_id") @db.ObjectId
+  userId                 String      @db.ObjectId
+  user                   User        @relation(fields: [userId], references: [id])
+  status                 OrderStatus @default(PENDING)
+  type                   OrderType   @default(SINGLE)
+  packages               Package[]
+  totalWeight            Float
+  totalPrice             Float
+  destinationWarehouseId String?     @db.ObjectId
+  destinationWarehouse   Warehouse?  @relation(fields: [destinationWarehouseId], references: [id])
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+  note                   String?
+
+  Payment      Payment[]
+  OrderHistory OrderHistory?
+
+  @@map("orders")
+}
+
+model OrderHistory {
+  id                      String    @id @default(auto()) @map("_id") @db.ObjectId
+  orderId                 String    @unique @db.ObjectId
+  order                   Order     @relation(fields: [orderId], references: [id])
+  orderShipDate           DateTime?
+  orderAgentDate          DateTime?
+  orderOutForDeliveryDate DateTime?
+  orderDeliveryDate       DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+}
+
+model Payment {
+  id              String      @id @default(auto()) @map("_id") @db.ObjectId
+  orderId         String?     @db.ObjectId
+  order           Order?      @relation(fields: [orderId], references: [id])
+  userId          String      @db.ObjectId
+  User            User        @relation(fields: [userId], references: [id])
+  paymentIntentId String?     @unique
+  gateway         String?
+  amount          Float
+  type            PaymentType
+  currency        String      @default("USD")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@map("payments")
+}
+
+model Service {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  name_es        String
+  description    String
+  description_es String
+  banner         String
+  price          Float
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  ServicePackage ServicePackage[]
+}
+
+model Review {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  createdBy String   @db.ObjectId
+  image     String
+  name      String
+  name_es   String
+  rating    Int
+  review    String
+  review_es String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Blog {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  title      String
+  title_es   String
+  content    String
+  content_es String
+  video      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Earn {
+  id    String @id @default(auto()) @map("_id") @db.ObjectId
+  value Int
+}
+
+model FAQ {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  question    String
+  question_es String
+  answer      String
+  answer_es   String
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("faqs")
+}
+
+model Partner {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  logo      String
+  website   String?
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("partners")
+}
+
+model Company {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  logo      String
+  website   String?
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("companies")
+}
+
+model Fulfillment {
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  fulfillmentText    String
+  fulfillmentText_es String
+  createdAt          DateTime @default(now())
+}
+
+model AboutUs {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  aboutText    String
+  aboutText_es String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Banner {
+  id    String @id @default(auto()) @map("_id") @db.ObjectId
+  image String @unique
+}
+
+enum UserRoleEnum {
+  USER
+  ADMIN
+  AGENT
+  SUPERADMIN
+}
+
+enum PackageStatus {
+  ALERTED
+  STORED
+  ORDERED
+  SHIPPED
+  DELIVERED
+}
+
+enum UserStatus {
+  ACTIVATE
+  INACTIVATE
+  BLOCKED
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  SHIPPED
+  CARGO
+  AGENT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  READY_FOR_PICKUP
+}
+
+enum PaymentType {
+  CONSOLIDATION
+  PLAN
+  SERVICE
+  ORDER
+}
+
+enum PaymentStatus {
+  PAID
+  UNPAID
+}
